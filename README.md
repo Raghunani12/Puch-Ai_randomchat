@@ -10,20 +10,20 @@ MCP (Model Context Protocol) allows AI assistants like Puch to connect to extern
 
 ## Folders
 
-- **[`mcp-bearer-token/`](./mcp-bearer-token/)**  
+- **[`mcp-bearer-token/`](./mcp-bearer-token/)**
   Example MCP servers using **Bearer token** auth (required by Puch AI). Includes:
-  - **[`mcp_starter.py`](./mcp-bearer-token/mcp_starter.py)**  
+  - **[`mcp_starter.py`](./mcp-bearer-token/mcp_starter.py)**
     A minimal MCP server with:
     - Text input/output tool (echo-style processing)
     - Image input/output tool (e.g., convert to black & white)
     - Bearer token validation
-  - **[`puch-user-id-mcp-example.py`](./mcp-bearer-token/puch-user-id-mcp-example.py)**  
+  - **[`puch-user-id-mcp-example.py`](./mcp-bearer-token/puch-user-id-mcp-example.py)**
     A task management MCP server that demonstrates how to use `puch_user_id` (a unique, Puch-provided user identifier) to scope tasks and data per user.
 
-- **[`mcp-google-oauth/`](./mcp-google-oauth/)**  
+- **[`mcp-google-oauth/`](./mcp-google-oauth/)**
   Example MCP server showing how to implement **OAuth** with Google for MCP authentication/authorization.
 
-- **[`mcp-oauth-github/`](./mcp-oauth-github/)**  
+- **[`mcp-oauth-github/`](./mcp-oauth-github/)**
   Example MCP server showing how to implement **OAuth** with GitHub for MCP authentication/authorization.
 
 ## Quick Setup Guide
@@ -100,6 +100,96 @@ You can also deploy this to services like:
 - Render
 - Heroku
 - DigitalOcean App Platform
+
+
+## WhatsApp Random Connect MCP Server (Puch AI)
+
+This repository includes a production-ready MCP server that enables anonymous, random one-to-one chat inside Puch on WhatsApp. It uses in-memory state for speed and can be swapped to Redis later.
+
+### Highlights
+- Anonymous pairing: no phone numbers shared (masked in all outbound text)
+- Minimal commands: connect and chat — no fluff
+- Scales to 100+ concurrent users (O(1) queue, capped per-user inbox)
+- Session safety: per-pair session IDs, strict routing, and locking
+- Privacy-first logging (sanitized)
+
+### Prerequisites
+- Python 3.11+
+- ngrok (for HTTPS tunneling in development)
+
+### Environment
+Create or edit .env in the repo root with:
+
+```env
+AUTH_TOKEN=gotselected
+MY_NUMBER=919014769239
+```
+
+Notes:
+- AUTH_TOKEN is the Bearer token Puch will use when connecting to your MCP server.
+- MY_NUMBER must be in {country_code}{number} without + (required by Puch’s validate tool).
+
+### Run the Random Connect server
+
+```bash
+# From the repo root
+source .venv/bin/activate  # if using uv venv
+python3 mcp-bearer-token/random_connect_server.py
+```
+
+You should see it listening on http://0.0.0.0:8086 and the MCP endpoint mounted at /mcp/.
+
+### Expose HTTPS with ngrok
+
+```bash
+ngrok http 8086
+```
+Copy the HTTPS URL, e.g. https://abcd1234.ngrok-free.app
+
+### Connect from WhatsApp (Puch)
+- Open: https://wa.me/+919998881729
+- Send:
+
+```
+/mcp connect https://abcd1234.ngrok-free.app/mcp gotselected
+```
+
+If needed, also try with a trailing slash: /mcp connect https://.../mcp/ gotselected
+
+### Use it
+- Pair: `#meet`
+- Send: `#r your message` (or `#R ...`)
+- Check messages: `#m` (or `#M`)
+- End: `#bye`
+- Reconnect quickly: `#again`
+- Mask toggle: `#hide` (ON by default)
+- See partner nickname: `#who`
+
+Behavior (MVP, optimized for reliability under load):
+- Strict command flow by default for deterministic routing during the hackathon
+  - Only `#R/#r` sends to partner
+  - Only `#M/#m` pulls queued partner messages
+  - Non-command text returns a tip to use `#R` and `#M`
+- On successful pairing, both users are notified they’re connected and can start chatting
+- Messages are routed only between the two matched users (no user-specified targets)
+
+### Security & Privacy
+- Phone numbers are masked in all outbound content and logs (regex-based)
+- Chat routing uses active_pairs and per-pair session IDs; misrouted messages are dropped
+- All data is in-memory and ephemeral (Redis/Postgres ready if needed)
+
+### Troubleshooting
+- 401 Unauthorized: Check your AUTH_TOKEN and ensure you used the `/mcp` path
+- 404 Not Found: You hit the root; include `/mcp` or `/mcp/` at the end of your URL
+- 307 Temporary Redirect: Normal — `/mcp` redirects to `/mcp/`
+- Puch replies in natural language instead of routing through the tool: it should not while a session is active. Our tool description instructs: “While a session is active, ALWAYS call this tool for ALL messages. Do not reply in natural language.” If needed, send `/mcp diagnostics-level debug` once.
+
+### Scale notes
+- Matchmaking uses deque + set (O(1))
+- Per-user inbox capped at 100 messages to prevent memory pressure
+- Lock-protected critical sections; optional asyncio/Redis migration for horizontal scaling
+
+---
 
 ## How to Connect with Puch AI
 
