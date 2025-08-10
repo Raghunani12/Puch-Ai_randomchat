@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 
 [[package]]
@@ -618,6 +618,7 @@ dependencies = [
     { name = "fastmcp" },
     { name = "markdownify" },
     { name = "pillow" },
+    { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "readabilipy" },
 ]
@@ -629,6 +630,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=2.11.2" },
     { name = "markdownify", specifier = ">=1.1.0" },
     { name = "pillow", specifier = ">=11.3.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "readabilipy", specifier = ">=0.3.0" },
 ]
