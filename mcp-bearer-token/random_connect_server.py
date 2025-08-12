@@ -4,7 +4,9 @@ import logging
 from typing import Annotated
 from dotenv import load_dotenv
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
+# Use the new JWT verifier to avoid deprecation issues
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.bearer import RSAKeyPair
 from mcp import ErrorData, McpError
 from mcp.server.auth.provider import AccessToken
 from mcp.types import TextContent, INVALID_PARAMS, INTERNAL_ERROR
@@ -29,14 +31,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Auth Provider ---
-class SimpleBearerAuthProvider(BearerAuthProvider):
+class SimpleBearerAuthProvider(JWTVerifier):
+    """Simple constant-token verifier using JWTVerifier interface.
+    Accepts exactly the token configured in .env; rejects everything else.
+    """
     def __init__(self, token: str):
+        # Generate ephemeral keys to satisfy base class ctor; not used for actual verification
         k = RSAKeyPair.generate()
-        super().__init__(public_key=k.public_key, jwks_uri=None, issuer=None, audience=None)
+        super().__init__(jwks_uri=None, issuer=None, audience=None, public_key=k.public_key)
         self.token = token
 
     async def load_access_token(self, token: str) -> AccessToken | None:
-        if token == self.token:
+        if token and token.strip() == (self.token or "").strip():
             return AccessToken(
                 token=token,
                 client_id="puch-random-connect",
@@ -60,7 +66,11 @@ mcp = FastMCP(
 # --- Tool: validate (required by Puch) ---
 @mcp.tool
 async def validate() -> str:
-    """Validate the bearer token and return the server owner's phone number."""
+    """Validate server availability and return the server owner number.
+    Returns the number in {country_code}{number} format as required by Puch.
+    """
+    if not MY_NUMBER or not MY_NUMBER.isdigit():
+        raise McpError(ErrorData(code=INVALID_PARAMS, message="Server not configured: MY_NUMBER missing/invalid"))
     return MY_NUMBER
 
 # --- Tool: handle_message (main random connect functionality) ---

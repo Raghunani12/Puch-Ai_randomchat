@@ -27,6 +27,7 @@ class UserState:
     phone_masking_enabled: bool = True
     partner_id: Optional[str] = None
     partner_session_id: Optional[str] = None
+    nickname_set: bool = False
     last_activity: datetime = field(default_factory=datetime.now)
     
     def __post_init__(self):
@@ -98,10 +99,16 @@ class RandomConnectManager:
                     nickname = f"User_{user_id[:8]}"
                 self.user_states[user_id] = UserState(
                     user_id=user_id,
-                    nickname=nickname
+                    nickname=nickname,
+                    nickname_set=bool(nickname and not nickname.startswith("User_"))
                 )
                 logger.info(f"Created new user state for {nickname}")
-            
+            elif nickname and not self.user_states[user_id].nickname_set:
+                # First explicit nickname provided — persist and mark as set
+                self.user_states[user_id].nickname = nickname
+                self.user_states[user_id].nickname_set = True
+                logger.info(f"Nickname set for {user_id[:8]}: {self.sanitize_for_logging(nickname)}")
+
             # Update last activity
             self.user_states[user_id].last_activity = datetime.now()
             return self.user_states[user_id]
@@ -171,7 +178,8 @@ class RandomConnectManager:
             try:
                 me_nick = self.user_states.get(user_id).nickname if user_id in self.user_states else "Partner"
                 self.pending_notifications.setdefault(partner_id, []).append(
-                    f"🎉 Connected! You're now chatting with {me_nick}. Use #R to send and #M to check messages."
+                    "#meet to connect\n#bye to disconnect\n#again to meet someone new\n#who to know your partner\n\n"
+                    "Reply with your nickname (one line). We'll show it to your partner."
                 )
             except Exception:
                 pass
@@ -274,6 +282,20 @@ class RandomConnectManager:
                 return "Usage: #R your message here"
             return self._handle_message_routing(user_id, content)
 
+        # If this is the first non-command after connect, treat it as nickname
+        st = self.get_or_create_user_state(user_id)
+        if not st.nickname_set and not message_lower.startswith('#'):
+            # Set nickname and notify partner
+            with self.lock:
+                st.nickname = message.strip()[:32]
+                st.nickname_set = True
+                partner_id = self.get_partner(user_id)
+                if partner_id:
+                    self.pending_notifications.setdefault(partner_id, []).append(
+                        f"You are connected to {st.nickname}."
+                    )
+            return f"Nickname set to {st.nickname}. Use #R to chat, #M to check messages."
+
         # Handle regular message routing (only if not in strict mode)
         if not self.strict_mode:
             outbound = self._handle_message_routing(user_id, message)
@@ -301,7 +323,10 @@ class RandomConnectManager:
         if partner_id:
             partner_nickname = self.get_partner_nickname(user_id)
             logger.info(f"MATCH SUCCESS: {user_id[:8]} matched with {partner_id[:8]} ({partner_nickname})")
-            return f"🎉 Connected! You're now chatting with {partner_nickname}. Say hello!"
+            return (
+                "#meet to connect\n#bye to disconnect\n#again to meet someone new\n#who to know your partner\n\n"
+                "Reply with your nickname (one line). We'll show it to your partner."
+            )
         else:
             logger.info(f"User {user_id[:8]} added to waiting queue")
             return "🔍 Looking for someone to chat with... Please wait while we find you a partner!"
